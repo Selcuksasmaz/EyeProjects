@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#00796B</color> <!-- Koyu Yeşil/Turkuaz - Güven, Sağlık -->
+    <color name="colorPrimaryDark">#004D40</color> <!-- Daha Koyu Yeşil/Turkuaz -->
+    <color name="colorAccent">#00BFA5</color> <!-- Canlı Vurgu Yeşil/Turkuaz -->
+    <color name="white">#FFFFFF</color>
+    <color name="light_gray">#F5F5F5</color> <!-- Açık Gri Arkaplan -->
+    <color name="dark_gray_text">#424242</color> <!-- Koyu Gri Metin -->
+    <color name="medium_gray_text">#757575</color> <!-- Orta Gri İkincil Metin -->
+    <color name="button_login_gradient_start">#00796B</color>
+    <color name="button_login_gradient_end">#00BFA5</color>
+    <color name="edittext_underline">#BDBDBD</color>
+    <color name="error_red">#D32F2F</color>
+</resources>

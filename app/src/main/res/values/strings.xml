@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">EyeProjects</string>
+    <string name="login_welcome_message">Kalite Kontrol Sistemine Hoş Geldiniz</string>
+    <string name="username_hint">Kullanıcı Adı / E-posta</string>
+    <string name="password_hint">Şifre</string>
+    <string name="login_button_text">Giriş Yap</string>
+    <string name="forgot_password_text"><u>Şifremi Unuttum?</u></string>
+    <string name="register_text"><u>Yeni Hesap Oluştur</u></string>
+    <string name="company_slogan">Hassas Üretimde Güvenilir Çözümler</string>
+    <string name="login_failed">Kullanıcı adı veya şifre hatalı!</string>
+    <string name="login_successful">Giriş başarılı!</string>
+    <string name="please_fill_fields">Lütfen tüm alanları doldurun.</string>
+</resources>
