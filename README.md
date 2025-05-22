@@ -1,11 +1,11 @@
 Göz Bandı Kalite Kontrol Otomasyon Programı
 Okulumuzun düzenlediği Görüntü İşleme ve Mobil Uygulama Hackathonu kapsamında geliştirdiğimiz Göz Bandı Kalite Kontrol Otomasyon Programı,
 seri üretimden geçen göz bantlarının ambalajlanmasından sonra herhangi bir kalite sorununun olup olmadığını kontrol etmek için tasarlanmıştır.
-Bu uygulama, ürünlerin üzerinde oluşabilecek lekeler, deformasyonlar,kenar simetrisi bozuklukları ve barkod hatalarını tespit ederek kalite kontrol sürecini otomatikleştirir.
+Bu uygulama, ürünlerin üzerinde oluşabilecek lekeler, deformasyonlar,kenar simetrisi bozuklukları tespit ederek kalite kontrol sürecini otomatikleştirir.
 
 Özellikler
 Kamera ile gerçek zamanlı görüntü işleme.
-Ürün üzerindeki lekeler, deformasyon, kenar simetrisi, yırtık ve barkod tespiti.
+Ürün üzerindeki lekeler, deformasyon, kenar simetrisi, yırtık tespiti.
 Hata eşiği belirleme ve hata oranı hesaplama.
 
 Gereksinimler
@@ -13,12 +13,15 @@ Android Studio
 Android 8.0 (Oreo) ve sonrasında çalışır.
 OpenCV kütüphanesi: OpenCV Android SDK 4.11.0 (https://opencv.org/releases/)
 Cihazda kamera erişimi için izinler.
+Blender 4.4
 
 Gerekli Bağımlılıkların Yüklenmesi
 Android Studioyu açın ve Githubdan projeyi klonlayın
 Daha sonrasında indirdiğiniz OpenCV kütüphanesinin SDK dosyasını projeye yüklemek için File'dan yeni bir modül yüklemeye gelin ve OpenCV kütüphanesini indirmiş olduğunuz SDK Dosyasını Yükleyin
 Gradle ile projenizi senkronize edin 
 Buradan sonra hata aldıysanız project errors kısmında android studionun belirlediği compileSdk ve targetSdk değerlerini girin.
+Blender Uygulamasını kurduktan sonra repository içersindeki .blend uzantılı dosyayı başlatın space tuşuna basarak simülasyonu başlatın
+
 
 *** Programı telefonunuza kablo ile aktarıp kullanınız.
 
@@ -44,7 +47,8 @@ Görüntü Veri Yapıları = Mat rgbaFull, rgba, gray, edges, blurred gibi nesne
 Geçici Veri Yapıları = Mat mask, diff, defectMask, meanDev, stddev, hull, defectsMat gibi geçici veri yapıları da O(n * m) bellek kullanır, çünkü her biri bir görüntüyü (veya bir kısmını) tutar.
 Kontur ve Hiyerarşi = List<MatOfPoint> contours ve Mat hierarchy gibi veri yapıları, her kontur için bellek gerektirir. Genellikle kontur sayısı, O(k) (k, tespit edilen konturların sayısı) kadar belleğe ihtiyaç duyar. Bu nedenle, konturlar için kullanılan bellek, genellikle O(k) olarak kabul edilir, ancak genellikle O(n) civarındadır, çünkü her pikselin bir kontur ile ilişkilendirilmesi gereklidir.
 Barkod ve Metin Analizi = Barkod ve metin analizi sırasında, geometrik özelliklerin hesaplanması için kullanılan geçici veriler (örneğin, Rect, RotatedRect, MatOfPoint2f) de bellek kullanır, ancak bu genellikle O(k) (kontur sayısı kadar) kadar bir bellek kullanımına sahiptir.
- 
+
+https://drive.google.com/drive/folders/11W4lPh1JwMACzSXgVCRQI1rC2NVQ493U?usp=sharing -> Uygulama Tanıtım Videosu 
 
 
 
