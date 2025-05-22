@@ -31,32 +31,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private static final int CAMERA_PERMISSION_CODE = 100;
     private JavaCameraView cameraView;
     private TextView resultStatus, detailStatus;
-    private double defectThreshold = 5; // Varsayılan hata eşiği
-
-    // Genel Filtreleme Sabitleri (ölçeklenmiş görüntü için, scaleFactor=0.5)
-    private static final double MIN_AREA_TO_CONSIDER_AS_FILTER_TARGET_SCALED = 10;
-    private static final double MAX_OVERALL_AREA_FOR_FILTER_TARGET_SCALED = 2000;
-    private static final double DARK_INK_GRAY_LEVEL_THRESHOLD = 80;
-
-    // Metin (Tarih vb.) filtreleme sabitleri
-    private static final double MIN_TEXT_AREA_SCALED = 15;
-    private static final double TEXT_MAX_AREA_SCALED = 250;
-    private static final float MIN_TEXT_ASPECT_RATIO = 0.15f;
-    private static final float MAX_TEXT_ASPECT_RATIO = 7.0f;
-
-    // Birincil Barkod Çizgisi filtreleme sabitleri
-    private static final float BARCODE_LINE_ELONGATION_ASPECT_RATIO = 4.0f;
-    private static final double MAX_AREA_FOR_SINGLE_BARCODE_LINE_SCALED = 450;
-    private static final float BARCODE_LINE_MAX_THICKNESS_SCALED = 18f;
-    private static final float BARCODE_LINE_MIN_LENGTH_SCALED = 35f;
-    private static final float BARCODE_MIN_SOLIDITY = 0.75f;
-
-    // İkincil (Esnek) Barkod Çizgisi/Segmenti filtreleme sabitleri
-    private static final float RELAXED_BARCODE_ELONGATION_ASPECT_RATIO = 2.8f;
-    private static final double RELAXED_MAX_AREA_FOR_BARCODE_SEGMENT_SCALED = 750;
-    private static final float RELAXED_BARCODE_MAX_THICKNESS_SCALED = 35f;
-    private static final float RELAXED_BARCODE_MIN_LENGTH_SCALED = 25f;
-    private static final float RELAXED_BARCODE_MIN_SOLIDITY = 0.65f;
+    private double defectThreshold = 5.0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -150,13 +125,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         List<MatOfPoint> contours = new ArrayList<>();
         Mat hierarchy = new Mat();
 
-        List<MatOfPoint> dibujarLekeler = new ArrayList<>();
-        Mat lekeHiyerarsisi = new Mat();
+        List<MatOfPoint> dibujarContours = new ArrayList<>();
+        Mat defectHierarchy = new Mat();
 
         Mat mask = null, diff = null, defectMask = null;
         MatOfDouble meanDev = null, stddev = null;
         MatOfInt hull = null;
-        MatOfPoint smoothedContour = null, scaledContour = null;
+        MatOfPoint smoothedContour = null, scaledContour = null; // hullPoints kaldırıldı, doğrudan kullanılmayacak
         MatOfPoint2f contour2f = null, smoothedContour2f = null, approxRect = null;
         MatOfInt4 defectsMat = null;
 
@@ -174,13 +149,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             MatOfPoint selectedContour = null;
             double maxArea = 0;
 
-            // Add a list to store barcode-like areas
-            List<MatOfPoint> barcodeContours = new ArrayList<>();
-
             for (MatOfPoint contour : contours) {
                 double area = Imgproc.contourArea(contour);
                 Rect rect = Imgproc.boundingRect(contour);
-                float aspect = (rect.height == 0) ? 0 : (float) rect.width / rect.height;
+                float aspect = (rect.width == 0 || rect.height == 0) ? 0 : (float) rect.width / rect.height;
+
+                // Alan eşiğini ölçek faktörüne göre ayarla
                 if (area > (8000 * scaleFactor * scaleFactor) && aspect > 0.5 && aspect < 2.0) {
                     if (area > maxArea) {
                         maxArea = area;
@@ -190,178 +164,101 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             }
 
             if (selectedContour != null) {
+                // Yumuşatılmış kontur (alan ve leke analizi için)
                 contour2f = new MatOfPoint2f(selectedContour.toArray());
                 smoothedContour2f = new MatOfPoint2f();
                 Imgproc.approxPolyDP(contour2f, smoothedContour2f, 0.04 * Imgproc.arcLength(contour2f, true), true);
                 smoothedContour = new MatOfPoint(smoothedContour2f.toArray());
 
+                // totalArea, yumuşatılmış konturdan hesaplanıyor (orijinal mantık)
                 mask = Mat.zeros(gray.size(), CvType.CV_8UC1);
                 Imgproc.drawContours(mask, List.of(smoothedContour), -1, new Scalar(255), Core.FILLED);
                 double totalArea = Core.countNonZero(mask);
 
-                Scalar meanGrayVal = Core.mean(gray, mask);
+                // Leke Analizi
+                Scalar meanGray = Core.mean(gray, mask);
                 diff = new Mat();
-                Core.absdiff(gray, new Scalar(meanGrayVal.val[0]), diff);
+                Core.absdiff(gray, new Scalar(meanGray.val[0]), diff);
                 Imgproc.threshold(diff, diff, 45, 255, Imgproc.THRESH_BINARY);
                 defectMask = new Mat();
                 Core.bitwise_and(diff, mask, defectMask);
+                double defectArea = Core.countNonZero(defectMask);
+                double lekeOrani = (totalArea > 0) ? (defectArea / totalArea) * 100 : 0;
 
-                // Barkod/Yazı Filtreleme Başlangıcı
+                Mat tempDefectMask = defectMask.clone();
+                Imgproc.findContours(tempDefectMask, dibujarContours, defectHierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+                tempDefectMask.release();
 
-                if (Core.countNonZero(defectMask) > 0) {
-                    Mat tempDefectMaskForFiltering = defectMask.clone();
-                    List<MatOfPoint> potentialFilterTargets = new ArrayList<>();
-                    Mat hierarchyForFiltering = new Mat();
-                    Imgproc.findContours(tempDefectMaskForFiltering, potentialFilterTargets, hierarchyForFiltering, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-                    tempDefectMaskForFiltering.release();
-                    hierarchyForFiltering.release();
-
-                    for (MatOfPoint pftContour : potentialFilterTargets) {
-                        double pftArea = Imgproc.contourArea(pftContour);
-                        boolean isLikelyText = false;
-                        boolean isLikelyBarcodeElement = false;
-
-                        if (pftArea > MIN_AREA_TO_CONSIDER_AS_FILTER_TARGET_SCALED && pftArea < MAX_OVERALL_AREA_FOR_FILTER_TARGET_SCALED) {
-                            Mat singleTargetMask = Mat.zeros(gray.size(), CvType.CV_8UC1);
-                            Imgproc.drawContours(singleTargetMask, List.of(pftContour), -1, new Scalar(255), Core.FILLED);
-                            Scalar meanIntensityL = Core.mean(gray, singleTargetMask);
-                            singleTargetMask.release();
-
-                            if (meanIntensityL.val[0] < DARK_INK_GRAY_LEVEL_THRESHOLD) {
-                                // Metin kontrolü
-                                Rect pftBoundingRect = Imgproc.boundingRect(pftContour);
-                                float textAspectRatio = (pftBoundingRect.height == 0) ? 0 : (float)pftBoundingRect.width / pftBoundingRect.height;
-                                if (pftArea > MIN_TEXT_AREA_SCALED && pftArea < TEXT_MAX_AREA_SCALED &&
-                                        textAspectRatio > MIN_TEXT_ASPECT_RATIO && textAspectRatio < MAX_TEXT_ASPECT_RATIO) {
-                                    isLikelyText = true;
-                                }
-
-                                // Barkod çizgisi kontrolü
-                                if (!isLikelyText) {
-                                    if (pftContour.toArray().length >= 5) {
-                                        MatOfPoint2f pftContour2f_forRR = null;
-                                        RotatedRect rotatedRect = null;
-                                        try {
-                                            pftContour2f_forRR = new MatOfPoint2f(pftContour.toArray());
-                                            rotatedRect = Imgproc.minAreaRect(pftContour2f_forRR);
-
-                                            Size rrSize = rotatedRect.size;
-                                            float rrWidth = (float) rrSize.width;
-                                            float rrHeight = (float) rrSize.height;
-                                            float solidity = 0f;
-
-                                            if (rrWidth > 0 && rrHeight > 0) {
-                                                solidity = (float) (pftArea / (rrWidth * rrHeight));
-
-                                                float shorterSide = Math.min(rrWidth, rrHeight);
-                                                float longerSide = Math.max(rrWidth, rrHeight);
-
-                                                if (shorterSide > 0) {
-                                                    float elongation = longerSide / shorterSide;
-
-                                                    // Birincil Barkod Kontrolü
-                                                    if (elongation > BARCODE_LINE_ELONGATION_ASPECT_RATIO &&
-                                                            pftArea < MAX_AREA_FOR_SINGLE_BARCODE_LINE_SCALED &&
-                                                            shorterSide < BARCODE_LINE_MAX_THICKNESS_SCALED &&
-                                                            longerSide > BARCODE_LINE_MIN_LENGTH_SCALED &&
-                                                            solidity > BARCODE_MIN_SOLIDITY) {
-                                                        isLikelyBarcodeElement = true;
-                                                    }
-
-                                                    // İkincil Barkod Kontrolü
-                                                    if (!isLikelyBarcodeElement) {
-                                                        if (elongation > RELAXED_BARCODE_ELONGATION_ASPECT_RATIO &&
-                                                                pftArea < RELAXED_MAX_AREA_FOR_BARCODE_SEGMENT_SCALED &&
-                                                                shorterSide < RELAXED_BARCODE_MAX_THICKNESS_SCALED &&
-                                                                longerSide > RELAXED_BARCODE_MIN_LENGTH_SCALED &&
-                                                                solidity > RELAXED_BARCODE_MIN_SOLIDITY) {
-                                                            isLikelyBarcodeElement = true;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        } finally {
-                                            if (pftContour2f_forRR != null) pftContour2f_forRR.release();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (isLikelyText || isLikelyBarcodeElement) {
-                            if (isLikelyBarcodeElement) {
-                                barcodeContours.add(pftContour); // Barkodları ayrı bir listeye ekle
-                            } else {
-                                Imgproc.drawContours(defectMask, List.of(pftContour), -1, new Scalar(0), Core.FILLED); // Barkod değilse leke olarak işaretle
-                            }
-                        }
+                for (MatOfPoint defectContourItem : dibujarContours) {
+                    MatOfPoint scaledDefectContourItem = new MatOfPoint();
+                    List<Point> scaledDefectPoints = new ArrayList<>();
+                    for (Point p : defectContourItem.toList()) {
+                        scaledDefectPoints.add(new Point(p.x / scaleFactor, p.y / scaleFactor));
                     }
-                    potentialFilterTargets.clear();
+                    scaledDefectContourItem.fromList(scaledDefectPoints);
+                    Imgproc.drawContours(rgbaFull, List.of(scaledDefectContourItem), -1, new Scalar(255, 0, 0), 2);
+                    scaledDefectContourItem.release();
                 }
 
-                // Barkod/Yazı Filtreleme Sonu
-
-                double finalDefectArea = Core.countNonZero(defectMask);
-                double lekeOrani = (totalArea > 0) ? (finalDefectArea / totalArea) * 100 : 0;
-
-                dibujarLekeler.clear();
-                if (finalDefectArea > 0) {
-                    Mat defectMaskForDrawing = defectMask.clone();
-                    Imgproc.findContours(defectMaskForDrawing, dibujarLekeler, lekeHiyerarsisi, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-                    defectMaskForDrawing.release();
-                    for (MatOfPoint defectContourItem : dibujarLekeler) {
-                        MatOfPoint scaledDefectContourItem = new MatOfPoint();
-                        List<Point> scaledDefectPoints = new ArrayList<>();
-                        for (Point p : defectContourItem.toList()) {
-                            scaledDefectPoints.add(new Point(p.x / scaleFactor, p.y / scaleFactor));
-                        }
-                        scaledDefectContourItem.fromList(scaledDefectPoints);
-                        Imgproc.drawContours(rgbaFull, List.of(scaledDefectContourItem), -1, new Scalar(255, 0, 0), 2);
-                        scaledDefectContourItem.release();
-                    }
-                }
-
+                // Deformasyon Analizi
                 meanDev = new MatOfDouble();
                 stddev = new MatOfDouble();
-                Core.meanStdDev(gray, meanDev, stddev, mask);
-                double deformasyon = Math.min((stddev.get(0,0)[0] / 350.0) * 100.0, 100.0);
+                Core.meanStdDev(gray, meanDev, stddev, mask); // mask hala smoothedContour'a ait
+                double deformasyon = Math.min((stddev.get(0,0)[0] / 250.0) * 100.0, 100.0);
 
+
+                // Simetri Analizi (yumuşatılmış kontur üzerinden)
                 double horizDiff = 0, vertDiff = 0;
-                approxRect = new MatOfPoint2f();
+                approxRect = new MatOfPoint2f(); // contour2f (selectedContour'dan) ile çalışabilir veya smoothedContour2f
                 Imgproc.approxPolyDP(smoothedContour2f, approxRect, 0.04 * Imgproc.arcLength(smoothedContour2f, true), true);
+
                 if (approxRect.total() == 4) {
                     Point[] pts = approxRect.toArray();
                     double d1 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
                     double d3 = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
                     double d2 = Math.hypot(pts[1].x - pts[2].x, pts[1].y - pts[2].y);
                     double d4 = Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y);
+
                     horizDiff = (Math.max(d1, d3) == 0) ? 100 : Math.abs(d1 - d3) / Math.max(d1, d3) * 100;
                     vertDiff = (Math.max(d2, d4) == 0) ? 100 : Math.abs(d2 - d4) / Math.max(d2, d4) * 100;
                 } else {
                     horizDiff = vertDiff = 100;
                 }
 
+                // --- Yırtık Analizi (Orijinal Mantığa Geri Dönüş) ---
                 hull = new MatOfInt();
+                // Convex Hull'ı selectedContour (ham kontur) üzerinden hesapla
                 Imgproc.convexHull(selectedContour, hull);
+
+                // Defect noktalarını selectedContour'dan al
                 Point[] selectedContourPoints = selectedContour.toArray();
+
                 defectsMat = new MatOfInt4();
+                // Convexity Defects'i selectedContour ve onun hull'ı ile hesapla
                 if (selectedContour.rows() > 3 && hull.rows() > 0 && !hull.empty()) {
                     Imgproc.convexityDefects(selectedContour, hull, defectsMat);
                 }
+
                 double tearDefectScore = 0;
                 if (defectsMat != null && !defectsMat.empty() && defectsMat.rows() > 0) {
                     for (int i = 0; i < defectsMat.rows(); ++i) {
                         double[] vec = defectsMat.get(i, 0);
                         if (vec != null && vec.length == 4) {
+
+                            // Bu indisler selectedContourPoints dizisine aittir
                             Point ptStart = selectedContourPoints[(int) vec[0]];
                             Point ptEnd = selectedContourPoints[(int) vec[1]];
                             Point ptFar = selectedContourPoints[(int) vec[2]];
                             double depth = vec[3] / 256.0;
+
+                            // Orijinal derinlik eşiği
                             if (depth > 5.0) {
                                 tearDefectScore += depth;
+                                // Yırtık görselleştirme (ölçekli koordinatlarla)
                                 Point scaledPtStart = new Point(ptStart.x / scaleFactor, ptStart.y / scaleFactor);
                                 Point scaledPtEnd = new Point(ptEnd.x / scaleFactor, ptEnd.y / scaleFactor);
                                 Point scaledPtFar = new Point(ptFar.x / scaleFactor, ptFar.y / scaleFactor);
+
                                 Imgproc.line(rgbaFull, scaledPtStart, scaledPtFar, new Scalar(255, 165, 0), 2);
                                 Imgproc.line(rgbaFull, scaledPtEnd, scaledPtFar, new Scalar(255, 165, 0), 2);
                                 Imgproc.circle(rgbaFull, scaledPtFar, 5, new Scalar(255, 0, 255), -1);
@@ -369,10 +266,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                         }
                     }
                 }
+                // Normalizasyon totalArea (smoothedContour'dan) ile yapılıyor (orijinal mantık)
                 double normalizedTearScore = (totalArea > 0) ? Math.min((tearDefectScore / (totalArea / 1000.0)) * 50.0, 100.0) : 0;
+
 
                 double toplamHata = (lekeOrani * 0.05) + (deformasyon * 0.45) + ((horizDiff + vertDiff) / 2.0 * 0.25) + (normalizedTearScore * 0.25);
 
+                // Ana konturu çiz (yumuşatılmış olanı çizmek daha iyi görünebilir)
                 scaledContour = new MatOfPoint();
                 List<Point> scaledPoints = new ArrayList<>();
                 for (Point p : smoothedContour.toList()) {
@@ -396,10 +296,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                         resultStatus.setText(String.format(Locale.US,"GEÇTİ (%.2f%% hata)", finalToplamHata));
                         resultStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
                     }
+
                     if (defectThreshold == 0 && finalToplamHata > 0) {
                         resultStatus.setText("Yüzde 0 hatalı ürün bulunmamaktadır");
                         resultStatus.setTextColor(getResources().getColor(android.R.color.holo_orange_dark));
                     }
+
                     String rapor = String.format(Locale.US,
                             "Detay:\n• Leke: %.1f%%\n• Ambalaj Bozulması: %.1f%%\n• Kenar Simetrisi Yatay: %.1f%%\n• Kenar Simetrisi Dikey: %.1f%%\n• Yırtık: %.1f%%",
                             finalLekeOrani, finalDeformasyon, finalHorizDiff, finalVertDiff, finalNormalizedTearScore
@@ -415,6 +317,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 });
             }
         } catch (Exception e) {
+            // e.printStackTrace(); // For debugging
             runOnUiThread(() -> {
                 resultStatus.setText("Hata oluştu");
                 detailStatus.setText(e.getMessage() != null ? e.getMessage() : "Bilinmeyen hata");
@@ -425,7 +328,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             gray.release();
             edges.release();
             hierarchy.release();
-            lekeHiyerarsisi.release();
+            defectHierarchy.release();
 
             if (mask != null) mask.release();
             if (diff != null) diff.release();
@@ -441,15 +344,16 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             if (approxRect != null) approxRect.release();
             if (scaledContour != null) scaledContour.release();
 
+
             for (MatOfPoint contour : contours) {
                 if (contour != null) contour.release();
             }
             contours.clear();
 
-            for (MatOfPoint defectContourItem : dibujarLekeler) {
+            for (MatOfPoint defectContourItem : dibujarContours) {
                 if (defectContourItem != null) defectContourItem.release();
             }
-            dibujarLekeler.clear();
+            dibujarContours.clear();
         }
         return rgbaFull;
     }
