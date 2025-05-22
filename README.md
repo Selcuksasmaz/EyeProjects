@@ -22,6 +22,9 @@ Buradan sonra hata aldıysanız project errors kısmında android studionun beli
 
 *** Programı telefonunuza kablo ile aktarıp kullanınız.
 
+FPS Ölçümü: 0.42 FPS
+1 Dakikada İşlenen Görüntü -> 25
+
 Zaman Karmaşıklığı (Time Complexity)
 Genel Zaman Karmaşıklığı = O(n * m)
 
