@@ -31,7 +31,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private static final int CAMERA_PERMISSION_CODE = 100;
     private JavaCameraView cameraView;
     private TextView resultStatus, detailStatus;
-    private double defectThreshold = 2.5; // Varsayılan hata eşiği
+    private double defectThreshold = 5; // Varsayılan hata eşiği
 
     // Genel Filtreleme Sabitleri (ölçeklenmiş görüntü için, scaleFactor=0.5)
     private static final double MIN_AREA_TO_CONSIDER_AS_FILTER_TARGET_SCALED = 10;
@@ -174,6 +174,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             MatOfPoint selectedContour = null;
             double maxArea = 0;
 
+            // Add a list to store barcode-like areas
+            List<MatOfPoint> barcodeContours = new ArrayList<>();
+
             for (MatOfPoint contour : contours) {
                 double area = Imgproc.contourArea(contour);
                 Rect rect = Imgproc.boundingRect(contour);
@@ -225,7 +228,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                             singleTargetMask.release();
 
                             if (meanIntensityL.val[0] < DARK_INK_GRAY_LEVEL_THRESHOLD) {
-                                // Metin kontrolü (ana sınırlayıcı dikdörtgen ile)
+                                // Metin kontrolü
                                 Rect pftBoundingRect = Imgproc.boundingRect(pftContour);
                                 float textAspectRatio = (pftBoundingRect.height == 0) ? 0 : (float)pftBoundingRect.width / pftBoundingRect.height;
                                 if (pftArea > MIN_TEXT_AREA_SCALED && pftArea < TEXT_MAX_AREA_SCALED &&
@@ -233,9 +236,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                                     isLikelyText = true;
                                 }
 
-                                // Barkod çizgisi/segmenti kontrolü (RotatedRect ile, eğer metin değilse)
+                                // Barkod çizgisi kontrolü
                                 if (!isLikelyText) {
-                                    if (pftContour.toArray().length >= 5) { // minAreaRect için en az 5 nokta gerekir
+                                    if (pftContour.toArray().length >= 5) {
                                         MatOfPoint2f pftContour2f_forRR = null;
                                         RotatedRect rotatedRect = null;
                                         try {
@@ -247,13 +250,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                                             float rrHeight = (float) rrSize.height;
                                             float solidity = 0f;
 
-                                            if (rrWidth > 0 && rrHeight > 0) { // Alanın sıfır olmamasını sağla
+                                            if (rrWidth > 0 && rrHeight > 0) {
                                                 solidity = (float) (pftArea / (rrWidth * rrHeight));
 
                                                 float shorterSide = Math.min(rrWidth, rrHeight);
                                                 float longerSide = Math.max(rrWidth, rrHeight);
 
-                                                if (shorterSide > 0) { // Sıfıra bölmeyi engelle
+                                                if (shorterSide > 0) {
                                                     float elongation = longerSide / shorterSide;
 
                                                     // Birincil Barkod Kontrolü
@@ -286,12 +289,16 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                         }
 
                         if (isLikelyText || isLikelyBarcodeElement) {
-                            Imgproc.drawContours(defectMask, List.of(pftContour), -1, new Scalar(0), Core.FILLED);
+                            if (isLikelyBarcodeElement) {
+                                barcodeContours.add(pftContour); // Barkodları ayrı bir listeye ekle
+                            } else {
+                                Imgproc.drawContours(defectMask, List.of(pftContour), -1, new Scalar(0), Core.FILLED); // Barkod değilse leke olarak işaretle
+                            }
                         }
-                        pftContour.release();
                     }
                     potentialFilterTargets.clear();
                 }
+
                 // Barkod/Yazı Filtreleme Sonu
 
                 double finalDefectArea = Core.countNonZero(defectMask);
@@ -408,7 +415,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 });
             }
         } catch (Exception e) {
-            // e.printStackTrace();
             runOnUiThread(() -> {
                 resultStatus.setText("Hata oluştu");
                 detailStatus.setText(e.getMessage() != null ? e.getMessage() : "Bilinmeyen hata");
