@@ -12,8 +12,10 @@
         android:layout_height="match_parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.0"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.0" />
 
     <TextView
         android:id="@+id/resultStatus"
@@ -58,5 +60,49 @@
         app:layout_constraintEnd_toEndOf="parent"
         android:clickable="true"
         android:focusable="true" />
+
+    <TextView
+        android:id="@+id/validCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Geçerli Ürün: 0"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:layout_marginTop="8dp"
+        android:background="#80000000"
+        android:padding="8dp"
+        app:layout_constraintTop_toBottomOf="@+id/detailStatus"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <TextView
+        android:id="@+id/invalidCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Geçersiz Ürün: 0"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:layout_marginTop="8dp"
+        android:background="#80000000"
+        android:padding="8dp"
+        app:layout_constraintTop_toBottomOf="@+id/validCount"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <Button
+        android:id="@+id/scanButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="#FF6200EE"
+        android:clickable="true"
+        android:focusable="true"
+        android:padding="12dp"
+        android:text="Ürünü Tara"
+        android:textColor="@android:color/white"
+        android:layout_marginBottom="16dp"
+        android:layout_marginStart="16dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
 
 </androidx.constraintlayout.widget.ConstraintLayout>

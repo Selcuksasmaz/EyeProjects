@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.SurfaceView;
+import android.widget.Button; // Add this import
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -25,13 +26,19 @@ import org.opencv.imgproc.Imgproc;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean; // Added for scan control
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
 
     private static final int CAMERA_PERMISSION_CODE = 100;
     private JavaCameraView cameraView;
-    private TextView resultStatus, detailStatus;
+    private TextView resultStatus, detailStatus, validCount, invalidCount; // Added validCount, invalidCount
+    private Button scanButton; // Added scanButton
     private double defectThreshold = 5.0;
+
+    private int validProductCount = 0; // Counter for valid products
+    private int invalidProductCount = 0; // Counter for invalid products
+    private AtomicBoolean isScanning = new AtomicBoolean(false); // To control scan state
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,6 +49,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         resultStatus = findViewById(R.id.resultStatus);
         detailStatus = findViewById(R.id.detailStatus);
         TextView setThresholdButton = findViewById(R.id.setThresholdButton);
+        validCount = findViewById(R.id.validCount); // Initialize validCount
+        invalidCount = findViewById(R.id.invalidCount); // Initialize invalidCount
+        scanButton = findViewById(R.id.scanButton); // Initialize scanButton
+
+        // Update initial counter display
+        updateCounters();
 
         cameraView.setVisibility(SurfaceView.VISIBLE);
         cameraView.setCameraIndex(0);
@@ -56,6 +69,16 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
 
         setThresholdButton.setOnClickListener(v -> showThresholdInputDialog());
+
+        // Set OnClickListener for the scan button
+        scanButton.setOnClickListener(v -> {
+            if (!isScanning.get()) { // Prevent multiple simultaneous scans
+                isScanning.set(true);
+                Toast.makeText(MainActivity.this, "Ürün taranıyor...", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(MainActivity.this, "Tarama zaten devam ediyor.", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     private void initOpenCV() {
@@ -108,6 +131,14 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         builder.show();
     }
 
+    // Helper method to update the counter TextViews
+    private void updateCounters() {
+        runOnUiThread(() -> {
+            validCount.setText(String.format(Locale.getDefault(), "Geçerli Ürün: %d", validProductCount));
+            invalidCount.setText(String.format(Locale.getDefault(), "Geçersiz Ürün: %d", invalidProductCount));
+        });
+    }
+
     @Override
     public void onCameraViewStarted(int width, int height) {
     }
@@ -131,7 +162,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         Mat mask = null, diff = null, defectMask = null;
         MatOfDouble meanDev = null, stddev = null;
         MatOfInt hull = null;
-        MatOfPoint smoothedContour = null, scaledContour = null; // hullPoints kaldırıldı, doğrudan kullanılmayacak
+        MatOfPoint smoothedContour = null, scaledContour = null;
         MatOfPoint2f contour2f = null, smoothedContour2f = null, approxRect = null;
         MatOfInt4 defectsMat = null;
 
@@ -154,7 +185,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 Rect rect = Imgproc.boundingRect(contour);
                 float aspect = (rect.width == 0 || rect.height == 0) ? 0 : (float) rect.width / rect.height;
 
-                // Alan eşiğini ölçek faktörüne göre ayarla
                 if (area > (8000 * scaleFactor * scaleFactor) && aspect > 0.5 && aspect < 2.0) {
                     if (area > maxArea) {
                         maxArea = area;
@@ -164,18 +194,15 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             }
 
             if (selectedContour != null) {
-                // Yumuşatılmış kontur (alan ve leke analizi için)
                 contour2f = new MatOfPoint2f(selectedContour.toArray());
                 smoothedContour2f = new MatOfPoint2f();
                 Imgproc.approxPolyDP(contour2f, smoothedContour2f, 0.04 * Imgproc.arcLength(contour2f, true), true);
                 smoothedContour = new MatOfPoint(smoothedContour2f.toArray());
 
-                // totalArea, yumuşatılmış konturdan hesaplanıyor (orijinal mantık)
                 mask = Mat.zeros(gray.size(), CvType.CV_8UC1);
                 Imgproc.drawContours(mask, List.of(smoothedContour), -1, new Scalar(255), Core.FILLED);
                 double totalArea = Core.countNonZero(mask);
 
-                // Leke Analizi
                 Scalar meanGray = Core.mean(gray, mask);
                 diff = new Mat();
                 Core.absdiff(gray, new Scalar(meanGray.val[0]), diff);
@@ -200,16 +227,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                     scaledDefectContourItem.release();
                 }
 
-                // Deformasyon Analizi
                 meanDev = new MatOfDouble();
                 stddev = new MatOfDouble();
-                Core.meanStdDev(gray, meanDev, stddev, mask); // mask hala smoothedContour'a ait
+                Core.meanStdDev(gray, meanDev, stddev, mask);
                 double deformasyon = Math.min((stddev.get(0,0)[0] / 250.0) * 100.0, 100.0);
 
-
-                // Simetri Analizi (yumuşatılmış kontur üzerinden)
                 double horizDiff = 0, vertDiff = 0;
-                approxRect = new MatOfPoint2f(); // contour2f (selectedContour'dan) ile çalışabilir veya smoothedContour2f
+                approxRect = new MatOfPoint2f();
                 Imgproc.approxPolyDP(smoothedContour2f, approxRect, 0.04 * Imgproc.arcLength(smoothedContour2f, true), true);
 
                 if (approxRect.total() == 4) {
@@ -225,16 +249,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                     horizDiff = vertDiff = 100;
                 }
 
-                // --- Yırtık Analizi (Orijinal Mantığa Geri Dönüş) ---
                 hull = new MatOfInt();
-                // Convex Hull'ı selectedContour (ham kontur) üzerinden hesapla
                 Imgproc.convexHull(selectedContour, hull);
 
-                // Defect noktalarını selectedContour'dan al
                 Point[] selectedContourPoints = selectedContour.toArray();
 
                 defectsMat = new MatOfInt4();
-                // Convexity Defects'i selectedContour ve onun hull'ı ile hesapla
                 if (selectedContour.rows() > 3 && hull.rows() > 0 && !hull.empty()) {
                     Imgproc.convexityDefects(selectedContour, hull, defectsMat);
                 }
@@ -245,16 +265,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                         double[] vec = defectsMat.get(i, 0);
                         if (vec != null && vec.length == 4) {
 
-                            // Bu indisler selectedContourPoints dizisine aittir
                             Point ptStart = selectedContourPoints[(int) vec[0]];
                             Point ptEnd = selectedContourPoints[(int) vec[1]];
                             Point ptFar = selectedContourPoints[(int) vec[2]];
                             double depth = vec[3] / 256.0;
 
-                            // Orijinal derinlik eşiği
                             if (depth > 5.0) {
                                 tearDefectScore += depth;
-                                // Yırtık görselleştirme (ölçekli koordinatlarla)
                                 Point scaledPtStart = new Point(ptStart.x / scaleFactor, ptStart.y / scaleFactor);
                                 Point scaledPtEnd = new Point(ptEnd.x / scaleFactor, ptEnd.y / scaleFactor);
                                 Point scaledPtFar = new Point(ptFar.x / scaleFactor, ptFar.y / scaleFactor);
@@ -266,13 +283,11 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                         }
                     }
                 }
-                // Normalizasyon totalArea (smoothedContour'dan) ile yapılıyor (orijinal mantık)
                 double normalizedTearScore = (totalArea > 0) ? Math.min((tearDefectScore / (totalArea / 1000.0)) * 50.0, 100.0) : 0;
 
 
                 double toplamHata = (lekeOrani * 0.05) + (deformasyon * 0.45) + ((horizDiff + vertDiff) / 2.0 * 0.25) + (normalizedTearScore * 0.25);
 
-                // Ana konturu çiz (yumuşatılmış olanı çizmek daha iyi görünebilir)
                 scaledContour = new MatOfPoint();
                 List<Point> scaledPoints = new ArrayList<>();
                 for (Point p : smoothedContour.toList()) {
@@ -292,14 +307,35 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                     if (finalToplamHata > defectThreshold) {
                         resultStatus.setText(String.format(Locale.US,"KALDI (%.2f%% hata)", finalToplamHata));
                         resultStatus.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+                        // Increment invalid product count if scanning
+                        if (isScanning.get()) {
+                            invalidProductCount++;
+                            updateCounters();
+                            isScanning.set(false); // Reset scan state after counting
+                            Toast.makeText(MainActivity.this, "Ürün geçersiz olarak kaydedildi.", Toast.LENGTH_SHORT).show();
+                        }
                     } else {
                         resultStatus.setText(String.format(Locale.US,"GEÇTİ (%.2f%% hata)", finalToplamHata));
                         resultStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+                        // Increment valid product count if scanning
+                        if (isScanning.get()) {
+                            validProductCount++;
+                            updateCounters();
+                            isScanning.set(false); // Reset scan state after counting
+                            Toast.makeText(MainActivity.this, "Ürün geçerli olarak kaydedildi.", Toast.LENGTH_SHORT).show();
+                        }
                     }
 
                     if (defectThreshold == 0 && finalToplamHata > 0) {
                         resultStatus.setText("Yüzde 0 hatalı ürün bulunmamaktadır");
                         resultStatus.setTextColor(getResources().getColor(android.R.color.holo_orange_dark));
+                        // Handle the 0% error threshold scenario for scanning
+                        if (isScanning.get()) {
+                            invalidProductCount++; // If 0% error is not met, it's invalid
+                            updateCounters();
+                            isScanning.set(false);
+                            Toast.makeText(MainActivity.this, "Ürün geçersiz olarak kaydedildi (0% eşiği).", Toast.LENGTH_SHORT).show();
+                        }
                     }
 
                     String rapor = String.format(Locale.US,
@@ -314,13 +350,21 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                     resultStatus.setText("Ürün algılanmadı");
                     resultStatus.setTextColor(getResources().getColor(android.R.color.darker_gray));
                     detailStatus.setText("Ürün algılanması bekleniyor...");
+                    // If no product is detected during a scan, treat it as invalid (or handle as "not scannable")
+                    if (isScanning.get()) {
+                        Toast.makeText(MainActivity.this, "Ürün algılanamadığı için tarama tamamlanamadı.", Toast.LENGTH_SHORT).show();
+                        isScanning.set(false); // Reset scan state
+                    }
                 });
             }
         } catch (Exception e) {
-            // e.printStackTrace(); // For debugging
             runOnUiThread(() -> {
                 resultStatus.setText("Hata oluştu");
                 detailStatus.setText(e.getMessage() != null ? e.getMessage() : "Bilinmeyen hata");
+                if (isScanning.get()) {
+                    isScanning.set(false); // Reset scan state on error
+                    Toast.makeText(MainActivity.this, "Tarama sırasında hata oluştu.", Toast.LENGTH_SHORT).show();
+                }
             });
         }
         finally {
